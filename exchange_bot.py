@@ -32,7 +32,7 @@ import ccxt
 import pandas as pd
 import numpy as np
 from dotenv import load_dotenv
-from flask import Flask, jsonify, render_template
+from flask import Flask, jsonify, render_template, request
 
 # ============================================================
 # CONFIG
@@ -109,9 +109,9 @@ class DashboardState:
 
     def update_tick(self, price, ma_short, ma_long, rsi, signal, state):
         with self.lock:
-            self.data["price"] = round(float(price), 2)
-            self.data["ma_short"] = round(float(ma_short), 2) if ma_short == ma_short else None
-            self.data["ma_long"] = round(float(ma_long), 2) if ma_long == ma_long else None
+            self.data["price"] = price_round(price)
+            self.data["ma_short"] = price_round(ma_short) if ma_short == ma_short else None
+            self.data["ma_long"] = price_round(ma_long) if ma_long == ma_long else None
             self.data["rsi"] = round(float(rsi), 1) if rsi == rsi else None
             self.data["signal"] = signal
             self.data["in_position"] = state["in_position"]
@@ -124,9 +124,9 @@ class DashboardState:
             self.data["last_update"] = datetime.now().strftime("%H:%M:%S")
             self.data["history"].append({
                 "t": datetime.now().strftime("%H:%M:%S"),
-                "price": round(float(price), 2),
-                "ma_short": round(float(ma_short), 2) if ma_short == ma_short else None,
-                "ma_long": round(float(ma_long), 2) if ma_long == ma_long else None,
+                "price": price_round(price),
+                "ma_short": price_round(ma_short) if ma_short == ma_short else None,
+                "ma_long": price_round(ma_long) if ma_long == ma_long else None,
             })
 
     def update_candles(self, df):
@@ -136,10 +136,10 @@ class DashboardState:
                 (
                     {
                         "t": int(ts.timestamp() * 1000),
-                        "o": round(float(row["Open"]), 2),
-                        "h": round(float(row["High"]), 2),
-                        "l": round(float(row["Low"]), 2),
-                        "c": round(float(row["Close"]), 2),
+                        "o": price_round(row["Open"]),
+                        "h": price_round(row["High"]),
+                        "l": price_round(row["Low"]),
+                        "c": price_round(row["Close"]),
                     }
                     for ts, row in recent.iterrows()
                 ),
@@ -157,12 +157,24 @@ class DashboardState:
                 "base_total": round(base_bal.get("total", 0), 8) if base_bal else None,
             }
 
+    def switch_market(self, symbol, timeframe):
+        with self.lock:
+            self.data["symbol"] = symbol
+            self.data["timeframe"] = timeframe
+            self.data["price"] = None
+            self.data["ma_short"] = None
+            self.data["ma_long"] = None
+            self.data["rsi"] = None
+            self.data["signal"] = None
+            self.data["history"].clear()
+            self.data["candles"].clear()
+
     def add_trade(self, trade_type, price, pnl_pct, reason):
         with self.lock:
             self.data["trades"].append({
                 "time": datetime.now().strftime("%H:%M:%S"),
                 "type": trade_type,
-                "price": round(float(price), 2),
+                "price": price_round(price),
                 "pnl_pct": round(pnl_pct, 2) if pnl_pct is not None else None,
                 "reason": reason,
             })
@@ -197,6 +209,61 @@ log.addHandler(dashboard_handler)
 
 
 # ============================================================
+# RUNTIME CONFIG - erlaubt Marktwechsel im laufenden Betrieb über das Dashboard
+# ============================================================
+MARKET_PRESETS = ["BTC/USDT", "ETH/USDT", "DOGE/USDT", "SOL/USDT", "XRP/USDT",
+                   "ADA/USDT", "BNB/USDT", "TRX/USDT", "LTC/USDT", "MATIC/USDT"]
+TIMEFRAME_PRESETS = ["1m", "5m", "15m", "1h", "4h", "1d"]
+
+
+class RuntimeConfig:
+    """Hält Symbol/Timeframe veränderbar, damit man den Markt im laufenden Bot
+    über das Dashboard wechseln kann, ohne den Prozess neu zu starten."""
+
+    def __init__(self, symbol, timeframe):
+        self.lock = threading.Lock()
+        self.symbol = symbol
+        self.timeframe = timeframe
+        self.switch_requested = False
+
+    def get(self):
+        with self.lock:
+            return self.symbol, self.timeframe
+
+    def request_switch(self, symbol, timeframe):
+        with self.lock:
+            self.symbol = symbol
+            self.timeframe = timeframe
+            self.switch_requested = True
+
+    def consume_switch_flag(self):
+        with self.lock:
+            if self.switch_requested:
+                self.switch_requested = False
+                return True
+            return False
+
+
+runtime_config = RuntimeConfig(SYMBOL, TIMEFRAME)
+_exchange_ref = None  # wird in run_bot() gesetzt, damit die API-Route Märkte validieren kann
+
+
+def price_round(value):
+    """Rundet abhängig von der Preisgröße - verhindert, dass Coins unter 1 USD
+    (z.B. DOGE bei 0.07) auf 0.07 == 0.07 == 0.07 kollabieren und Kerzen verschwinden."""
+    value = float(value)
+    if value == 0:
+        return 0.0
+    magnitude = abs(value)
+    if magnitude >= 100:
+        return round(value, 2)
+    elif magnitude >= 1:
+        return round(value, 4)
+    else:
+        return round(value, 8)
+
+
+# ============================================================
 # FLASK DASHBOARD-SERVER
 # ============================================================
 app = Flask(__name__)
@@ -220,6 +287,42 @@ def index():
 @app.route("/api/data")
 def api_data():
     return jsonify(dashboard.snapshot())
+
+
+@app.route("/api/presets")
+def api_presets():
+    return jsonify({"markets": MARKET_PRESETS, "timeframes": TIMEFRAME_PRESETS})
+
+
+@app.route("/api/switch_market", methods=["POST"])
+def api_switch_market():
+    payload = request.get_json(silent=True) or {}
+    new_symbol = (payload.get("symbol") or "").strip().upper()
+    new_timeframe = (payload.get("timeframe") or "").strip()
+
+    if not new_symbol or "/" not in new_symbol:
+        return jsonify({"ok": False, "error": "Ungültiges Symbol-Format (erwartet z.B. BTC/USDT)."}), 400
+    if new_timeframe not in TIMEFRAME_PRESETS:
+        return jsonify({"ok": False, "error": f"Ungültiger Timeframe. Erlaubt: {TIMEFRAME_PRESETS}"}), 400
+
+    snapshot = dashboard.snapshot()
+    if snapshot["in_position"]:
+        return jsonify({"ok": False, "error": "Aktuell in offener Position - erst schließen, bevor der Markt gewechselt wird."}), 409
+
+    if _exchange_ref is not None:
+        try:
+            markets = _exchange_ref.load_markets()
+            if new_symbol not in markets:
+                return jsonify({"ok": False, "error": f"'{new_symbol}' ist auf dieser Exchange nicht verfügbar."}), 400
+        except Exception as e:
+            log.warning(f"Marktvalidierung beim Wechsel fehlgeschlagen (wird trotzdem versucht): {e}")
+
+    old_symbol, old_timeframe = runtime_config.get()
+    runtime_config.request_switch(new_symbol, new_timeframe)
+    dashboard.switch_market(new_symbol, new_timeframe)
+    log.info(f"Markt gewechselt: {old_symbol}/{old_timeframe} → {new_symbol}/{new_timeframe}")
+
+    return jsonify({"ok": True, "symbol": new_symbol, "timeframe": new_timeframe})
 
 
 def run_dashboard():
@@ -350,7 +453,7 @@ def place_buy_order(exchange, symbol, price, state):
     base_amount = spend_amount / price
     try:
         order = exchange.create_market_buy_order(symbol, base_amount)
-        log.info(f"KAUF ausgeführt: {base_amount:.6f} @ ~{price:.2f} (Order-ID: {order['id']})")
+        log.info(f"KAUF ausgeführt: {base_amount:.6f} @ ~{price_round(price)} (Order-ID: {order['id']})")
         state.update({"in_position": True, "entry_price": price, "amount": base_amount})
         dashboard.add_trade("BUY", price, None, "Signal")
     except Exception as e:
@@ -365,7 +468,7 @@ def place_sell_order(exchange, symbol, price, state, reason="Signal"):
     try:
         order = exchange.create_market_sell_order(symbol, amount)
         pnl_pct = (price - state["entry_price"]) / state["entry_price"] * 100
-        log.info(f"VERKAUF ausgeführt ({reason}): {amount:.6f} @ ~{price:.2f} | PnL: {pnl_pct:.2f}%")
+        log.info(f"VERKAUF ausgeführt ({reason}): {amount:.6f} @ ~{price_round(price)} | PnL: {pnl_pct:.2f}%")
         dashboard.add_trade("SELL", price, pnl_pct, reason)
         state.update({"in_position": False, "entry_price": None, "amount": None})
     except Exception as e:
@@ -377,28 +480,39 @@ def place_sell_order(exchange, symbol, price, state, reason="Signal"):
 # HAUPTSCHLEIFE
 # ============================================================
 def run_bot():
+    global _exchange_ref
     exchange = create_exchange()
+    _exchange_ref = exchange
     state = load_state()
+
+    current_symbol, current_timeframe = runtime_config.get()
 
     try:
         markets = exchange.load_markets()
-        if SYMBOL not in markets:
+        if current_symbol not in markets:
             volatile_candidates = ["DOGE/USDT", "SOL/USDT", "XRP/USDT", "ADA/USDT", "TRX/USDT", "ETH/USDT", "BNB/USDT"]
             available = [s for s in volatile_candidates if s in markets]
-            log.error(f"'{SYMBOL}' ist auf {'Testnet' if USE_TESTNET else 'Binance'} nicht verfügbar! "
+            log.error(f"'{current_symbol}' ist auf {'Testnet' if USE_TESTNET else 'Binance'} nicht verfügbar! "
                       f"Verfügbare Alternativen aus unserer Liste: {available or 'siehe exchange.load_markets()'}. "
-                      f"Bitte SYMBOL in der CONFIG anpassen und Bot neu starten.")
+                      f"Bitte im Dashboard einen anderen Markt wählen oder SYMBOL in der CONFIG anpassen.")
             return
     except Exception as e:
         log.warning(f"Marktliste konnte nicht geprüft werden (wird trotzdem versucht): {e}")
 
-    log.info(f"Bot gestartet | Symbol: {SYMBOL} | Timeframe: {TIMEFRAME} | "
+    log.info(f"Bot gestartet | Symbol: {current_symbol} | Timeframe: {current_timeframe} | "
              f"Testnet: {USE_TESTNET} | In Position: {state['in_position']}")
     log.info(f"Dashboard verfügbar unter: http://{DASHBOARD_HOST}:{DASHBOARD_PORT}")
 
     while True:
         try:
-            df = fetch_ohlcv_df(exchange, SYMBOL, TIMEFRAME)
+            # Prüfen, ob über das Dashboard ein Marktwechsel angefordert wurde
+            if runtime_config.consume_switch_flag():
+                current_symbol, current_timeframe = runtime_config.get()
+                state = {"in_position": False, "entry_price": None, "amount": None}
+                save_state(state)
+                log.info(f"Wechsel übernommen - handle jetzt {current_symbol} auf {current_timeframe}")
+
+            df = fetch_ohlcv_df(exchange, current_symbol, current_timeframe)
             signal, last_row = compute_signal(df)
             price = last_row["Close"]
 
@@ -407,7 +521,7 @@ def run_bot():
             dashboard.update_candles(df)
 
             try:
-                quote_ccy, base_ccy, quote_bal, base_bal = get_full_balance(exchange, SYMBOL)
+                quote_ccy, base_ccy, quote_bal, base_bal = get_full_balance(exchange, current_symbol)
                 dashboard.update_balance(quote_ccy, base_ccy, quote_bal, base_bal)
             except Exception as e:
                 log.warning(f"Guthaben konnte nicht geladen werden: {e}")
@@ -417,23 +531,23 @@ def run_bot():
                 loss_pct = (price - state["entry_price"]) / state["entry_price"]
                 if loss_pct <= -STOP_LOSS_PCT:
                     log.warning(f"STOP-LOSS ausgelöst bei {loss_pct*100:.2f}%")
-                    state = place_sell_order(exchange, SYMBOL, price, state, reason="STOP-LOSS")
+                    state = place_sell_order(exchange, current_symbol, price, state, reason="STOP-LOSS")
                     save_state(state)
                     time.sleep(CHECK_INTERVAL_SECONDS)
                     continue
 
             if signal == "BUY" and not state["in_position"]:
-                state = place_buy_order(exchange, SYMBOL, price, state)
+                state = place_buy_order(exchange, current_symbol, price, state)
             elif signal == "SELL" and state["in_position"]:
-                state = place_sell_order(exchange, SYMBOL, price, state, reason="Signal")
+                state = place_sell_order(exchange, current_symbol, price, state, reason="Signal")
             else:
                 ma_short = last_row["MA_short"]
                 ma_long = last_row["MA_long"]
                 gap_pct = (ma_short - ma_long) / ma_long * 100
                 trend = "MA20 über MA50 (bullisch)" if ma_short > ma_long else "MA20 unter MA50 (bärisch)"
-                log.info(f"Kein Trade | Preis: {price:.2f} | MA20: {ma_short:.2f} | MA50: {ma_long:.2f} "
-                         f"| Abstand: {gap_pct:+.3f}% ({trend}) | RSI: {last_row['RSI']:.1f} "
-                         f"| In Position: {state['in_position']}")
+                log.info(f"Kein Trade | Preis: {price_round(price)} | MA20: {price_round(ma_short)} | "
+                         f"MA50: {price_round(ma_long)} | Abstand: {gap_pct:+.3f}% ({trend}) "
+                         f"| RSI: {last_row['RSI']:.1f} | In Position: {state['in_position']}")
 
             save_state(state)
 

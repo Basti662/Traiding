@@ -141,6 +141,21 @@
   .toggle-btn.standalone{ border:1px solid var(--border); border-radius:5px; }
   .toggle-btn.standalone:hover{ background: var(--panel-2); }
 
+  .market-switch{ display:flex; align-items:center; gap:6px; margin-left:8px; }
+  .mini-select{
+    background: var(--panel-2); color: var(--text);
+    border: 1px solid var(--border); border-radius: 5px;
+    font-family:'IBM Plex Mono', monospace; font-size: 11px;
+    padding: 4px 6px; cursor: pointer;
+  }
+  .mini-select:hover{ border-color: var(--blue); }
+  .switch-status{
+    font-family:'IBM Plex Mono', monospace; font-size: 11px;
+    margin-left: 8px; max-width: 260px;
+  }
+  .switch-status.error{ color: var(--red); }
+  .switch-status.success{ color: var(--green); }
+
   .balance-box{ padding:14px; }
   .balance-row{
     display:flex; justify-content:space-between; align-items:baseline;
@@ -160,6 +175,14 @@
   <div class="badge" id="symbol-badge">{{ symbol }}</div>
   <div class="badge" id="tf-badge">{{ timeframe }}</div>
   <div class="badge testnet" id="mode-badge">TESTNET</div>
+
+  <div class="market-switch">
+    <select id="market-select" class="mini-select"></select>
+    <select id="tf-select" class="mini-select"></select>
+    <button class="toggle-btn standalone" id="btn-switch-market" onclick="switchMarket()">Wechseln</button>
+  </div>
+  <span class="switch-status" id="switch-status"></span>
+
   <div class="spacer"></div>
   <div class="updated" id="updated">wartet auf Daten…</div>
 </div>
@@ -308,6 +331,59 @@ function buildCandleChart(){
   });
 }
 
+let currentSymbol = "{{ symbol }}";
+let currentTimeframe = "{{ timeframe }}";
+
+async function loadPresets(){
+  try{
+    const res = await fetch('/api/presets');
+    const d = await res.json();
+    const marketSel = document.getElementById('market-select');
+    const tfSel = document.getElementById('tf-select');
+    marketSel.innerHTML = d.markets.map(m => `<option value="${m}" ${m === currentSymbol ? 'selected' : ''}>${m}</option>`).join('');
+    tfSel.innerHTML = d.timeframes.map(t => `<option value="${t}" ${t === currentTimeframe ? 'selected' : ''}>${t}</option>`).join('');
+  } catch(e){
+    console.error('Presets konnten nicht geladen werden', e);
+  }
+}
+
+async function switchMarket(){
+  const symbol = document.getElementById('market-select').value;
+  const timeframe = document.getElementById('tf-select').value;
+  const statusEl = document.getElementById('switch-status');
+  const btn = document.getElementById('btn-switch-market');
+
+  btn.disabled = true;
+  statusEl.textContent = 'wechsle…';
+  statusEl.className = 'switch-status';
+
+  try{
+    const res = await fetch('/api/switch_market', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ symbol, timeframe })
+    });
+    const d = await res.json();
+    if(d.ok){
+      currentSymbol = symbol;
+      currentTimeframe = timeframe;
+      statusEl.textContent = `✓ gewechselt zu ${symbol} / ${timeframe}`;
+      statusEl.className = 'switch-status success';
+      lastData = null;
+      if(chart){ chart.data.labels = []; chart.data.datasets.forEach(ds => ds.data = []); chart.update(); }
+    } else {
+      statusEl.textContent = '✗ ' + d.error;
+      statusEl.className = 'switch-status error';
+    }
+  } catch(e){
+    statusEl.textContent = '✗ Verbindungsfehler';
+    statusEl.className = 'switch-status error';
+  }
+  btn.disabled = false;
+}
+
+loadPresets();
+
 function resetZoom(){
   if(chart) chart.resetZoom();
 }
@@ -346,6 +422,8 @@ async function refresh(){
     const d = await res.json();
     lastData = d;
 
+    document.getElementById('symbol-badge').textContent = d.symbol || currentSymbol;
+    document.getElementById('tf-badge').textContent = d.timeframe || currentTimeframe;
     document.getElementById('mode-badge').textContent = d.testnet ? 'TESTNET' : 'LIVE';
     document.getElementById('mode-badge').className = 'badge ' + (d.testnet ? 'testnet' : 'live');
     document.getElementById('updated').textContent = d.last_update ? ('letztes Update: ' + d.last_update) : 'wartet auf Daten…';
