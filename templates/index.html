@@ -9,6 +9,7 @@
 <script src="{{ url_for('static', filename='chart.umd.js') }}"></script>
 <script src="{{ url_for('static', filename='chartjs-adapter-date-fns.bundle.min.js') }}"></script>
 <script src="{{ url_for('static', filename='chartjs-chart-financial.min.js') }}"></script>
+<script src="{{ url_for('static', filename='chartjs-plugin-zoom.min.js') }}"></script>
 <style>
   :root{
     --bg: #0B0F14;
@@ -137,6 +138,9 @@
   .toggle-btn.active{ background: var(--panel-2); color: var(--text); }
   .toggle-btn:hover{ color: var(--text); }
 
+  .toggle-btn.standalone{ border:1px solid var(--border); border-radius:5px; }
+  .toggle-btn.standalone:hover{ background: var(--panel-2); }
+
   .balance-box{ padding:14px; }
   .balance-row{
     display:flex; justify-content:space-between; align-items:baseline;
@@ -170,6 +174,7 @@
             <button class="toggle-btn active" id="btn-line" onclick="setChartMode('line')">Linie</button>
             <button class="toggle-btn" id="btn-candle" onclick="setChartMode('candle')">Kerzen</button>
           </div>
+          <button class="toggle-btn standalone" id="btn-reset-zoom" onclick="resetZoom()" title="Zoom zurücksetzen">⤢ Reset</button>
           <span id="chart-signal">—</span>
         </div>
       </div>
@@ -253,7 +258,18 @@ function buildLineChart(){
         x: { ticks: { color: '#6E7A8A', maxTicksLimit: 8 }, grid: { color: '#1A222C' } },
         y: { ticks: { color: '#6E7A8A' }, grid: { color: '#1A222C' } }
       },
-      plugins: { legend: { labels: { color: '#9AA6B2', font: { size: 11 } } } }
+      plugins: {
+        legend: { labels: { color: '#9AA6B2', font: { size: 11 } } },
+        zoom: {
+          pan: { enabled: true, mode: 'x' },
+          zoom: {
+            wheel: { enabled: true },
+            pinch: { enabled: true },
+            drag: { enabled: false },
+            mode: 'x'
+          }
+        }
+      }
     }
   });
 }
@@ -276,9 +292,24 @@ function buildCandleChart(){
         x: { type: 'time', time: { unit: 'hour' }, ticks: { color: '#6E7A8A', maxTicksLimit: 8 }, grid: { color: '#1A222C' } },
         y: { ticks: { color: '#6E7A8A' }, grid: { color: '#1A222C' } }
       },
-      plugins: { legend: { display: false } }
+      plugins: {
+        legend: { display: false },
+        zoom: {
+          pan: { enabled: true, mode: 'x' },
+          zoom: {
+            wheel: { enabled: true },
+            pinch: { enabled: true },
+            drag: { enabled: false },
+            mode: 'x'
+          }
+        }
+      }
     }
   });
+}
+
+function resetZoom(){
+  if(chart) chart.resetZoom();
 }
 
 function setChartMode(mode){

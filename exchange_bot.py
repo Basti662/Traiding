@@ -40,8 +40,8 @@ from flask import Flask, jsonify, render_template
 load_dotenv()
 
 USE_TESTNET = True                 # NIEMALS ohne wochenlange Testnet-Erfahrung auf False stellen
-SYMBOL = "BTC/USDT"
-TIMEFRAME = "1h"                   # Kerzengröße: '1m','5m','15m','1h','4h','1d'
+SYMBOL = "DOGE/USDT"               # volatiler als BTC - gut zum Stresstesten der Strategie
+TIMEFRAME = "15m"                  # Kerzengröße: '1m','5m','15m','1h','4h','1d'
 SHORT_WINDOW = 20
 LONG_WINDOW = 50
 USE_RSI_FILTER = True
@@ -49,13 +49,15 @@ RSI_PERIOD = 14
 RSI_OVERBOUGHT = 70
 
 MAX_POSITION_SIZE_PCT = 0.10       # max. 10% des verfügbaren Guthabens pro Trade
-STOP_LOSS_PCT = 0.05               # Notverkauf bei -5% seit Kauf (Kapitalschutz!)
+STOP_LOSS_PCT = 0.08               # Notverkauf bei -8% seit Kauf (bei volatilen Coins etwas großzügiger,
+                                    # sonst löst er bei normalem Rauschen zu oft aus)
 CHECK_INTERVAL_SECONDS = 60        # wie oft der Bot nach neuen Kerzen schaut
 
 STATE_FILE = "bot_state.json"      # merkt sich Position über Neustarts hinweg
 LOG_FILE = "bot_log.txt"
 
-DASHBOARD_HOST = "127.0.0.1"
+DASHBOARD_HOST = os.getenv("DASHBOARD_HOST", "127.0.0.1")  # auf dem Pi in .env auf 0.0.0.0 setzen,
+                                                             # um vom Laptop/Handy aus zuzugreifen
 DASHBOARD_PORT = 5000
 HISTORY_MAXLEN = 300                # wie viele Chart-Punkte im UI gezeigt werden
 CANDLE_MAXLEN = 120                 # wie viele Kerzen im Candlestick-Chart gezeigt werden
@@ -200,6 +202,16 @@ log.addHandler(dashboard_handler)
 app = Flask(__name__)
 
 
+@app.after_request
+def disable_caching(response):
+    """Verhindert, dass der Browser eine alte Version des Dashboards zwischenspeichert.
+    Wichtig, weil sich Symbol/Timeframe/Layout während der Entwicklung ändern können."""
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    return response
+
+
 @app.route("/")
 def index():
     return render_template("index.html", symbol=SYMBOL, timeframe=TIMEFRAME)
@@ -231,7 +243,11 @@ def create_exchange():
         "apiKey": api_key,
         "secret": api_secret,
         "enableRateLimit": True,
-        "options": {"defaultType": "spot"},
+        "options": {
+            "defaultType": "spot",
+            "adjustForTimeDifference": True,  # gleicht Abweichungen zur Binance-Serverzeit automatisch aus
+            "recvWindow": 10000,              # großzügigeres Zeitfenster gegen "outside of recvWindow"-Fehler
+        },
     })
 
     if USE_TESTNET:
@@ -239,6 +255,12 @@ def create_exchange():
         log.info("TESTNET-Modus aktiv - es wird mit Fake-Geld gehandelt.")
     else:
         log.warning("!!! LIVE-MODUS AKTIV - ECHTES GELD WIRD GEHANDELT !!!")
+
+    try:
+        exchange.load_time_difference()
+        log.info(f"Zeit-Offset zu Binance-Servern synchronisiert: {exchange.options.get('timeDifference', 0)} ms")
+    except Exception as e:
+        log.warning(f"Zeit-Synchronisation fehlgeschlagen (nicht kritisch, wird bei jedem Request neu versucht): {e}")
 
     return exchange
 
@@ -357,6 +379,18 @@ def place_sell_order(exchange, symbol, price, state, reason="Signal"):
 def run_bot():
     exchange = create_exchange()
     state = load_state()
+
+    try:
+        markets = exchange.load_markets()
+        if SYMBOL not in markets:
+            volatile_candidates = ["DOGE/USDT", "SOL/USDT", "XRP/USDT", "ADA/USDT", "TRX/USDT", "ETH/USDT", "BNB/USDT"]
+            available = [s for s in volatile_candidates if s in markets]
+            log.error(f"'{SYMBOL}' ist auf {'Testnet' if USE_TESTNET else 'Binance'} nicht verfügbar! "
+                      f"Verfügbare Alternativen aus unserer Liste: {available or 'siehe exchange.load_markets()'}. "
+                      f"Bitte SYMBOL in der CONFIG anpassen und Bot neu starten.")
+            return
+    except Exception as e:
+        log.warning(f"Marktliste konnte nicht geprüft werden (wird trotzdem versucht): {e}")
 
     log.info(f"Bot gestartet | Symbol: {SYMBOL} | Timeframe: {TIMEFRAME} | "
              f"Testnet: {USE_TESTNET} | In Position: {state['in_position']}")
