@@ -1,0 +1,21 @@
+# Secrets - NIEMALS committen
+.env
+*.docx
+
+# Lokaler Bot-Zustand (pro Maschine unterschiedlich, gehört nicht ins Repo)
+bot_state.json
+bot_log.txt
+
+# Python
+__pycache__/
+*.pyc
+venv/
+.venv/
+*.egg-info/
+
+# Backtest-Ausgaben (werden lokal neu generiert)
+backtest_ergebnis.png
+
+# OS
+.DS_Store
+Thumbs.db

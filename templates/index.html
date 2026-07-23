@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<title>Bot Dashboard — {{ symbol }}</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="{{ url_for('static', filename='chart.umd.js') }}"></script>
+<script src="{{ url_for('static', filename='chartjs-adapter-date-fns.bundle.min.js') }}"></script>
+<script src="{{ url_for('static', filename='chartjs-chart-financial.min.js') }}"></script>
+<style>
+  :root{
+    --bg: #0B0F14;
+    --panel: #121821;
+    --panel-2: #0E141C;
+    --border: #212B38;
+    --text: #E6EDF3;
+    --muted: #6E7A8A;
+    --green: #3FB950;
+    --red: #F0605A;
+    --amber: #D8A72E;
+    --blue: #5DA9E9;
+    --purple: #B48CE0;
+  }
+  *{ box-sizing: border-box; }
+  body{
+    margin:0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'IBM Plex Sans', sans-serif;
+    min-height: 100vh;
+  }
+  .topbar{
+    display:flex; align-items:center; gap:16px;
+    padding: 14px 22px;
+    border-bottom: 1px solid var(--border);
+    background: var(--panel-2);
+  }
+  .dot{
+    width:9px; height:9px; border-radius:50%;
+    background: var(--muted);
+    box-shadow: 0 0 0 0 rgba(63,185,80,.6);
+  }
+  .dot.live{
+    background: var(--green);
+    animation: pulse 1.8s infinite;
+  }
+  @keyframes pulse{
+    0%{ box-shadow: 0 0 0 0 rgba(63,185,80,.55); }
+    70%{ box-shadow: 0 0 0 8px rgba(63,185,80,0); }
+    100%{ box-shadow: 0 0 0 0 rgba(63,185,80,0); }
+  }
+  .brand{ font-weight:600; letter-spacing:.02em; font-size:15px; }
+  .brand span{ color:var(--muted); font-weight:400; }
+  .badge{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:11px; padding:3px 8px; border-radius:4px;
+    border:1px solid var(--border); color: var(--muted);
+    text-transform: uppercase; letter-spacing:.06em;
+  }
+  .badge.testnet{ color: var(--amber); border-color: rgba(216,167,46,.35); }
+  .badge.live{ color: var(--red); border-color: rgba(240,96,90,.35); }
+  .spacer{ flex:1; }
+  .updated{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:11px; color: var(--muted);
+  }
+
+  .grid{
+    display:grid;
+    grid-template-columns: 1fr 300px;
+    gap: 16px;
+    padding: 16px;
+  }
+  @media (max-width: 900px){
+    .grid{ grid-template-columns: 1fr; }
+  }
+
+  .panel{
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+  }
+  .panel-head{
+    display:flex; align-items:center; justify-content:space-between;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border);
+    font-size: 12px; text-transform: uppercase; letter-spacing:.06em;
+    color: var(--muted);
+  }
+  .chart-wrap{ padding: 14px; height: 420px; }
+
+  .stats{
+    display:grid; grid-template-columns: 1fr 1fr; gap:1px;
+    background: var(--border);
+  }
+  .stat{
+    background: var(--panel); padding: 14px;
+  }
+  .stat .label{ font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; margin-bottom:6px; }
+  .stat .value{ font-family:'IBM Plex Mono', monospace; font-size:20px; font-weight:600; }
+  .value.pos{ color: var(--green); }
+  .value.neg{ color: var(--red); }
+  .value.neutral{ color: var(--amber); }
+
+  .side{ display:flex; flex-direction:column; gap:16px; }
+
+  .position-box{ padding:14px; font-family:'IBM Plex Mono', monospace; font-size:13px; }
+  .position-box .row{ display:flex; justify-content:space-between; padding:5px 0; border-bottom:1px dashed var(--border); }
+  .position-box .row:last-child{ border-bottom:none; }
+  .position-box .k{ color:var(--muted); }
+
+  .log{
+    font-family:'IBM Plex Mono', monospace; font-size:11.5px;
+    padding: 10px 14px; height: 180px; overflow-y:auto;
+    line-height: 1.6; color: var(--muted);
+  }
+  .log .line.buy{ color: var(--green); }
+  .log .line.sell{ color: var(--red); }
+
+  table{ width:100%; border-collapse:collapse; font-family:'IBM Plex Mono', monospace; font-size:12px; }
+  th{ text-align:left; padding:8px 14px; color:var(--muted); font-weight:500; font-size:11px; text-transform:uppercase; border-bottom:1px solid var(--border); }
+  td{ padding:7px 14px; border-bottom:1px solid var(--border); }
+  tr:last-child td{ border-bottom:none; }
+  .type-buy{ color: var(--green); }
+  .type-sell{ color: var(--red); }
+  .empty{ padding: 20px 14px; color: var(--muted); font-size:12px; text-align:center; }
+
+  .toggle-group{ display:flex; border:1px solid var(--border); border-radius:5px; overflow:hidden; }
+  .toggle-btn{
+    background: transparent; border:none; color:var(--muted);
+    font-family:'IBM Plex Mono', monospace; font-size:11px; padding:4px 10px;
+    cursor:pointer; transition: background .15s, color .15s;
+  }
+  .toggle-btn + .toggle-btn{ border-left:1px solid var(--border); }
+  .toggle-btn.active{ background: var(--panel-2); color: var(--text); }
+  .toggle-btn:hover{ color: var(--text); }
+
+  .balance-box{ padding:14px; }
+  .balance-row{
+    display:flex; justify-content:space-between; align-items:baseline;
+    padding: 10px 0; border-bottom: 1px dashed var(--border);
+  }
+  .balance-row:last-child{ border-bottom:none; }
+  .balance-ccy{ font-size:12px; color:var(--muted); }
+  .balance-amt{ font-family:'IBM Plex Mono', monospace; font-size:16px; font-weight:600; }
+  .balance-sub{ font-family:'IBM Plex Mono', monospace; font-size:10px; color:var(--muted); }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="dot live" id="live-dot"></div>
+  <div class="brand">Trading Bot <span>/ MA Crossover</span></div>
+  <div class="badge" id="symbol-badge">{{ symbol }}</div>
+  <div class="badge" id="tf-badge">{{ timeframe }}</div>
+  <div class="badge testnet" id="mode-badge">TESTNET</div>
+  <div class="spacer"></div>
+  <div class="updated" id="updated">wartet auf Daten…</div>
+</div>
+
+<div class="grid">
+  <div style="display:flex; flex-direction:column; gap:16px;">
+    <div class="panel">
+      <div class="panel-head">
+        <span>Kurs &amp; Moving Averages</span>
+        <div style="display:flex; align-items:center; gap:10px;">
+          <div class="toggle-group">
+            <button class="toggle-btn active" id="btn-line" onclick="setChartMode('line')">Linie</button>
+            <button class="toggle-btn" id="btn-candle" onclick="setChartMode('candle')">Kerzen</button>
+          </div>
+          <span id="chart-signal">—</span>
+        </div>
+      </div>
+      <div class="chart-wrap"><canvas id="priceChart"></canvas></div>
+    </div>
+
+    <div class="panel">
+      <div class="stats">
+        <div class="stat"><div class="label">Preis</div><div class="value" id="stat-price">—</div></div>
+        <div class="stat"><div class="label">Signal</div><div class="value neutral" id="stat-signal">—</div></div>
+        <div class="stat"><div class="label">MA20 / MA50 Abstand</div><div class="value" id="stat-gap">—</div></div>
+        <div class="stat"><div class="label">RSI (14)</div><div class="value" id="stat-rsi">—</div></div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">Trade-Historie</div>
+      <div id="trades-wrap"><div class="empty">Noch keine Trades ausgeführt.</div></div>
+    </div>
+  </div>
+
+  <div class="side">
+    <div class="panel">
+      <div class="panel-head">Guthaben</div>
+      <div class="balance-box" id="balance-box">
+        <div class="balance-row">
+          <div>
+            <div class="balance-ccy" id="bal-quote-ccy">—</div>
+            <div class="balance-sub" id="bal-quote-total">Gesamt: —</div>
+          </div>
+          <div class="balance-amt" id="bal-quote-free">—</div>
+        </div>
+        <div class="balance-row">
+          <div>
+            <div class="balance-ccy" id="bal-base-ccy">—</div>
+            <div class="balance-sub" id="bal-base-total">Gesamt: —</div>
+          </div>
+          <div class="balance-amt" id="bal-base-free">—</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">Position</div>
+      <div class="position-box" id="position-box">
+        <div class="row"><span class="k">Status</span><span id="pos-status">FLAT</span></div>
+        <div class="row"><span class="k">Einstieg</span><span id="pos-entry">—</span></div>
+        <div class="row"><span class="k">Menge</span><span id="pos-amount">—</span></div>
+        <div class="row"><span class="k">PnL</span><span id="pos-pnl">—</span></div>
+      </div>
+    </div>
+
+    <div class="panel" style="flex:1;">
+      <div class="panel-head">Live-Log</div>
+      <div class="log" id="log-box"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+let chartMode = 'line';
+let chart = null;
+let lastData = null;
+
+function buildLineChart(){
+  const ctx = document.getElementById('priceChart').getContext('2d');
+  return new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: [],
+      datasets: [
+        { label: 'Preis', data: [], borderColor: '#E6EDF3', borderWidth: 1.5, pointRadius: 0, tension: 0.15 },
+        { label: 'MA20', data: [], borderColor: '#5DA9E9', borderWidth: 1.5, pointRadius: 0, tension: 0.15 },
+        { label: 'MA50', data: [], borderColor: '#B48CE0', borderWidth: 1.5, pointRadius: 0, tension: 0.15 },
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false, animation: false,
+      interaction: { mode: 'index', intersect: false },
+      scales: {
+        x: { ticks: { color: '#6E7A8A', maxTicksLimit: 8 }, grid: { color: '#1A222C' } },
+        y: { ticks: { color: '#6E7A8A' }, grid: { color: '#1A222C' } }
+      },
+      plugins: { legend: { labels: { color: '#9AA6B2', font: { size: 11 } } } }
+    }
+  });
+}
+
+function buildCandleChart(){
+  const ctx = document.getElementById('priceChart').getContext('2d');
+  return new Chart(ctx, {
+    type: 'candlestick',
+    data: {
+      datasets: [{
+        label: 'Kerzen',
+        data: [],
+        color: { up: '#3FB950', down: '#F0605A', unchanged: '#6E7A8A' },
+        borderColor: { up: '#3FB950', down: '#F0605A', unchanged: '#6E7A8A' },
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false, animation: false,
+      scales: {
+        x: { type: 'time', time: { unit: 'hour' }, ticks: { color: '#6E7A8A', maxTicksLimit: 8 }, grid: { color: '#1A222C' } },
+        y: { ticks: { color: '#6E7A8A' }, grid: { color: '#1A222C' } }
+      },
+      plugins: { legend: { display: false } }
+    }
+  });
+}
+
+function setChartMode(mode){
+  chartMode = mode;
+  document.getElementById('btn-line').classList.toggle('active', mode === 'line');
+  document.getElementById('btn-candle').classList.toggle('active', mode === 'candle');
+  if(chart) chart.destroy();
+  chart = mode === 'line' ? buildLineChart() : buildCandleChart();
+  if(lastData) renderChart(lastData);
+}
+
+function renderChart(d){
+  if(chartMode === 'line'){
+    chart.data.labels = d.history.map(h => h.t);
+    chart.data.datasets[0].data = d.history.map(h => h.price);
+    chart.data.datasets[1].data = d.history.map(h => h.ma_short);
+    chart.data.datasets[2].data = d.history.map(h => h.ma_long);
+  } else {
+    chart.data.datasets[0].data = d.candles.map(c => ({ x: c.t, o: c.o, h: c.h, l: c.l, c: c.c }));
+  }
+  chart.update();
+}
+
+chart = buildLineChart();
+
+function fmt(n, digits=2){
+  if(n === null || n === undefined) return '—';
+  return Number(n).toLocaleString('de-DE', {minimumFractionDigits: digits, maximumFractionDigits: digits});
+}
+
+async function refresh(){
+  try{
+    const res = await fetch('/api/data');
+    const d = await res.json();
+    lastData = d;
+
+    document.getElementById('mode-badge').textContent = d.testnet ? 'TESTNET' : 'LIVE';
+    document.getElementById('mode-badge').className = 'badge ' + (d.testnet ? 'testnet' : 'live');
+    document.getElementById('updated').textContent = d.last_update ? ('letztes Update: ' + d.last_update) : 'wartet auf Daten…';
+    document.getElementById('live-dot').className = 'dot live';
+
+    document.getElementById('stat-price').textContent = d.price ? fmt(d.price) : '—';
+    const sigEl = document.getElementById('stat-signal');
+    sigEl.textContent = d.signal || '—';
+    sigEl.className = 'value ' + (d.signal === 'BUY' ? 'pos' : d.signal === 'SELL' ? 'neg' : 'neutral');
+    document.getElementById('chart-signal').textContent = d.signal || '—';
+
+    if(d.ma_short && d.ma_long){
+      const gap = ((d.ma_short - d.ma_long) / d.ma_long * 100);
+      const gapEl = document.getElementById('stat-gap');
+      gapEl.textContent = (gap >= 0 ? '+' : '') + fmt(gap, 3) + '%';
+      gapEl.className = 'value ' + (gap >= 0 ? 'pos' : 'neg');
+    }
+    document.getElementById('stat-rsi').textContent = d.rsi ? fmt(d.rsi, 1) : '—';
+
+    document.getElementById('pos-status').textContent = d.in_position ? 'IN POSITION' : 'FLAT';
+    document.getElementById('pos-status').style.color = d.in_position ? '#3FB950' : '#6E7A8A';
+    document.getElementById('pos-entry').textContent = d.entry_price ? fmt(d.entry_price) : '—';
+    document.getElementById('pos-amount').textContent = d.position_amount ? fmt(d.position_amount, 6) : '—';
+    const pnlEl = document.getElementById('pos-pnl');
+    if(d.pnl_pct !== null && d.pnl_pct !== undefined){
+      pnlEl.textContent = (d.pnl_pct >= 0 ? '+' : '') + fmt(d.pnl_pct) + '%';
+      pnlEl.style.color = d.pnl_pct >= 0 ? '#3FB950' : '#F0605A';
+    } else {
+      pnlEl.textContent = '—'; pnlEl.style.color = '#E6EDF3';
+    }
+
+    // Guthaben
+    const b = d.balance || {};
+    document.getElementById('bal-quote-ccy').textContent = b.quote_currency || '—';
+    document.getElementById('bal-quote-free').textContent = b.quote_free !== null && b.quote_free !== undefined ? fmt(b.quote_free) : '—';
+    document.getElementById('bal-quote-total').textContent = 'Gesamt: ' + (b.quote_total !== null && b.quote_total !== undefined ? fmt(b.quote_total) : '—');
+    document.getElementById('bal-base-ccy').textContent = b.base_currency || '—';
+    document.getElementById('bal-base-free').textContent = b.base_free !== null && b.base_free !== undefined ? fmt(b.base_free, 6) : '—';
+    document.getElementById('bal-base-total').textContent = 'Gesamt: ' + (b.base_total !== null && b.base_total !== undefined ? fmt(b.base_total, 6) : '—');
+
+    renderChart(d);
+
+    // Trades
+    const tw = document.getElementById('trades-wrap');
+    if(d.trades.length === 0){
+      tw.innerHTML = '<div class="empty">Noch keine Trades ausgeführt.</div>';
+    } else {
+      let rows = d.trades.slice().reverse().map(t => `
+        <tr>
+          <td>${t.time}</td>
+          <td class="type-${t.type.toLowerCase()}">${t.type}</td>
+          <td>${fmt(t.price)}</td>
+          <td>${t.pnl_pct !== null ? (t.pnl_pct >= 0 ? '+' : '') + fmt(t.pnl_pct) + '%' : '—'}</td>
+          <td>${t.reason}</td>
+        </tr>`).join('');
+      tw.innerHTML = `<table><thead><tr><th>Zeit</th><th>Typ</th><th>Preis</th><th>PnL</th><th>Grund</th></tr></thead><tbody>${rows}</tbody></table>`;
+    }
+
+    // Log
+    const logBox = document.getElementById('log-box');
+    logBox.innerHTML = d.log_tail.map(l => {
+      let cls = '';
+      if(l.includes('KAUF')) cls = 'buy';
+      if(l.includes('VERKAUF')) cls = 'sell';
+      return `<div class="line ${cls}">${l}</div>`;
+    }).join('');
+    logBox.scrollTop = logBox.scrollHeight;
+
+  } catch(e){
+    document.getElementById('live-dot').className = 'dot';
+    document.getElementById('updated').textContent = 'Verbindung zum Bot verloren…';
+  }
+}
+
+refresh();
+setInterval(refresh, 3000);
+</script>
+</body>
+</html>
