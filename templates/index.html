@@ -2,504 +2,443 @@
 <html lang="de">
 <head>
 <meta charset="UTF-8">
-<title>Bot Dashboard — {{ symbol }}</title>
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
-<script src="{{ url_for('static', filename='chart.umd.js') }}"></script>
-<script src="{{ url_for('static', filename='chartjs-adapter-date-fns.bundle.min.js') }}"></script>
-<script src="{{ url_for('static', filename='chartjs-chart-financial.min.js') }}"></script>
-<script src="{{ url_for('static', filename='chartjs-plugin-zoom.min.js') }}"></script>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Struktur+Modell+Saisonalität Bot</title>
 <style>
-  :root{
-    --bg: #0B0F14;
-    --panel: #121821;
-    --panel-2: #0E141C;
-    --border: #212B38;
-    --text: #E6EDF3;
-    --muted: #6E7A8A;
-    --green: #3FB950;
-    --red: #F0605A;
-    --amber: #D8A72E;
-    --blue: #5DA9E9;
-    --purple: #B48CE0;
+  :root {
+    --bg: #0b0e14; --panel: #131722; --border: #232838;
+    --text: #e6e9ef; --muted: #7b8496;
+    --green: #3fb950; --red: #f85149; --yellow: #e3b341; --blue: #58a6ff;
   }
-  *{ box-sizing: border-box; }
-  body{
-    margin:0;
-    background: var(--bg);
-    color: var(--text);
-    font-family: 'IBM Plex Sans', sans-serif;
-    min-height: 100vh;
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    padding: 20px;
   }
-  .topbar{
-    display:flex; align-items:center; gap:16px;
-    padding: 14px 22px;
-    border-bottom: 1px solid var(--border);
-    background: var(--panel-2);
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .sub { color: var(--muted); font-size: 13px; margin-bottom: 20px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .grid { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; }
+  @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 16px; margin-bottom: 16px; }
+  .panel h2 { font-size: 14px; margin: 0 0 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+  .row { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid var(--border); font-size: 14px; }
+  .row:last-child { border-bottom: none; }
+  .row .label { color: var(--muted); }
+  .badge { padding: 2px 10px; border-radius: 20px; font-size: 12px; font-weight: 600; }
+  .badge.buy { background: rgba(63,185,80,0.15); color: var(--green); }
+  .badge.sell { background: rgba(248,81,73,0.15); color: var(--red); }
+  .badge.hold { background: rgba(123,132,150,0.15); color: var(--muted); }
+  .badge.testnet { background: rgba(88,166,255,0.15); color: var(--blue); }
+  .badge.live { background: rgba(248,81,73,0.15); color: var(--red); }
+  .pill { display: inline-block; padding: 2px 8px; border-radius: 6px; font-size: 12px; background: var(--border); color: var(--text); }
+  select, button, input {
+    background: #0d1017; color: var(--text); border: 1px solid var(--border);
+    border-radius: 6px; padding: 6px 10px; font-size: 13px;
   }
-  .dot{
-    width:9px; height:9px; border-radius:50%;
-    background: var(--muted);
-    box-shadow: 0 0 0 0 rgba(63,185,80,.6);
+  button { background: var(--blue); border: none; color: #04101f; font-weight: 600; cursor: pointer; }
+  button.danger { background: var(--red); color: #1a0a09; }
+  button:hover { opacity: 0.9; }
+  button:disabled { opacity: 0.4; cursor: not-allowed; }
+  .controls { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 6px 4px; border-bottom: 1px solid var(--border); }
+  th { color: var(--muted); font-weight: 500; }
+  tr.clickable { cursor: pointer; }
+  tr.clickable:hover { background: rgba(88,166,255,0.06); }
+  tr.active-row { background: rgba(88,166,255,0.1); }
+  .pnl-pos { color: var(--green); } .pnl-neg { color: var(--red); }
+  #log { background: #0d1017; border-radius: 6px; padding: 10px; height: 180px; overflow-y: auto; font-family: monospace; font-size: 12px; color: var(--muted); }
+  .error-msg { color: var(--red); font-size: 12px; margin-top: 6px; min-height: 16px; }
+  .tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+  .tab {
+    padding: 6px 12px; border-radius: 6px; font-size: 13px; cursor: pointer;
+    background: #0d1017; border: 1px solid var(--border); color: var(--muted);
   }
-  .dot.live{
-    background: var(--green);
-    animation: pulse 1.8s infinite;
-  }
-  @keyframes pulse{
-    0%{ box-shadow: 0 0 0 0 rgba(63,185,80,.55); }
-    70%{ box-shadow: 0 0 0 8px rgba(63,185,80,0); }
-    100%{ box-shadow: 0 0 0 0 rgba(63,185,80,0); }
-  }
-  .brand{ font-weight:600; letter-spacing:.02em; font-size:15px; }
-  .brand span{ color:var(--muted); font-weight:400; }
-  .badge{
-    font-family:'IBM Plex Mono', monospace;
-    font-size:11px; padding:3px 8px; border-radius:4px;
-    border:1px solid var(--border); color: var(--muted);
-    text-transform: uppercase; letter-spacing:.06em;
-  }
-  .badge.testnet{ color: var(--amber); border-color: rgba(216,167,46,.35); }
-  .badge.live{ color: var(--red); border-color: rgba(240,96,90,.35); }
-  .spacer{ flex:1; }
-  .updated{
-    font-family:'IBM Plex Mono', monospace;
-    font-size:11px; color: var(--muted);
-  }
-
-  .grid{
-    display:grid;
-    grid-template-columns: 1fr 300px;
-    gap: 16px;
-    padding: 16px;
-  }
-  @media (max-width: 900px){
-    .grid{ grid-template-columns: 1fr; }
-  }
-
-  .panel{
-    background: var(--panel);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-  }
-  .panel-head{
-    display:flex; align-items:center; justify-content:space-between;
-    padding: 10px 14px;
-    border-bottom: 1px solid var(--border);
-    font-size: 12px; text-transform: uppercase; letter-spacing:.06em;
-    color: var(--muted);
-  }
-  .chart-wrap{ padding: 14px; height: 420px; }
-
-  .stats{
-    display:grid; grid-template-columns: 1fr 1fr; gap:1px;
-    background: var(--border);
-  }
-  .stat{
-    background: var(--panel); padding: 14px;
-  }
-  .stat .label{ font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; margin-bottom:6px; }
-  .stat .value{ font-family:'IBM Plex Mono', monospace; font-size:20px; font-weight:600; }
-  .value.pos{ color: var(--green); }
-  .value.neg{ color: var(--red); }
-  .value.neutral{ color: var(--amber); }
-
-  .side{ display:flex; flex-direction:column; gap:16px; }
-
-  .position-box{ padding:14px; font-family:'IBM Plex Mono', monospace; font-size:13px; }
-  .position-box .row{ display:flex; justify-content:space-between; padding:5px 0; border-bottom:1px dashed var(--border); }
-  .position-box .row:last-child{ border-bottom:none; }
-  .position-box .k{ color:var(--muted); }
-
-  .log{
-    font-family:'IBM Plex Mono', monospace; font-size:11.5px;
-    padding: 10px 14px; height: 180px; overflow-y:auto;
-    line-height: 1.6; color: var(--muted);
-  }
-  .log .line.buy{ color: var(--green); }
-  .log .line.sell{ color: var(--red); }
-
-  table{ width:100%; border-collapse:collapse; font-family:'IBM Plex Mono', monospace; font-size:12px; }
-  th{ text-align:left; padding:8px 14px; color:var(--muted); font-weight:500; font-size:11px; text-transform:uppercase; border-bottom:1px solid var(--border); }
-  td{ padding:7px 14px; border-bottom:1px solid var(--border); }
-  tr:last-child td{ border-bottom:none; }
-  .type-buy{ color: var(--green); }
-  .type-sell{ color: var(--red); }
-  .empty{ padding: 20px 14px; color: var(--muted); font-size:12px; text-align:center; }
-
-  .toggle-group{ display:flex; border:1px solid var(--border); border-radius:5px; overflow:hidden; }
-  .toggle-btn{
-    background: transparent; border:none; color:var(--muted);
-    font-family:'IBM Plex Mono', monospace; font-size:11px; padding:4px 10px;
-    cursor:pointer; transition: background .15s, color .15s;
-  }
-  .toggle-btn + .toggle-btn{ border-left:1px solid var(--border); }
-  .toggle-btn.active{ background: var(--panel-2); color: var(--text); }
-  .toggle-btn:hover{ color: var(--text); }
-
-  .toggle-btn.standalone{ border:1px solid var(--border); border-radius:5px; }
-  .toggle-btn.standalone:hover{ background: var(--panel-2); }
-
-  .market-switch{ display:flex; align-items:center; gap:6px; margin-left:8px; }
-  .mini-select{
-    background: var(--panel-2); color: var(--text);
-    border: 1px solid var(--border); border-radius: 5px;
-    font-family:'IBM Plex Mono', monospace; font-size: 11px;
-    padding: 4px 6px; cursor: pointer;
-  }
-  .mini-select:hover{ border-color: var(--blue); }
-  .switch-status{
-    font-family:'IBM Plex Mono', monospace; font-size: 11px;
-    margin-left: 8px; max-width: 260px;
-  }
-  .switch-status.error{ color: var(--red); }
-  .switch-status.success{ color: var(--green); }
-
-  .balance-box{ padding:14px; }
-  .balance-row{
-    display:flex; justify-content:space-between; align-items:baseline;
-    padding: 10px 0; border-bottom: 1px dashed var(--border);
-  }
-  .balance-row:last-child{ border-bottom:none; }
-  .balance-ccy{ font-size:12px; color:var(--muted); }
-  .balance-amt{ font-family:'IBM Plex Mono', monospace; font-size:16px; font-weight:600; }
-  .balance-sub{ font-family:'IBM Plex Mono', monospace; font-size:10px; color:var(--muted); }
+  .tab.active { background: rgba(88,166,255,0.15); color: var(--blue); border-color: var(--blue); }
+  .tab .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 6px; }
+  .tab .dot.in-pos { background: var(--green); }
+  .tab .dot.flat { background: var(--muted); }
+  #candleCanvas { width: 100%; display: block; }
+  .legend { display: flex; gap: 14px; font-size: 12px; color: var(--muted); margin-top: 6px; flex-wrap: wrap; }
+  .legend span { display: flex; align-items: center; gap: 5px; }
+  .legend .swatch { width: 10px; height: 10px; border-radius: 2px; }
+  .remove-btn { font-size: 11px; padding: 2px 8px; }
 </style>
 </head>
 <body>
 
-<div class="topbar">
-  <div class="dot live" id="live-dot"></div>
-  <div class="brand">Trading Bot <span>/ MA Crossover</span></div>
-  <div class="badge" id="symbol-badge">{{ symbol }}</div>
-  <div class="badge" id="tf-badge">{{ timeframe }}</div>
-  <div class="badge testnet" id="mode-badge">TESTNET</div>
-
-  <div class="market-switch">
-    <select id="market-select" class="mini-select"></select>
-    <select id="tf-select" class="mini-select"></select>
-    <button class="toggle-btn standalone" id="btn-switch-market" onclick="switchMarket()">Wechseln</button>
-  </div>
-  <span class="switch-status" id="switch-status"></span>
-
-  <div class="spacer"></div>
-  <div class="updated" id="updated">wartet auf Daten…</div>
+<h1>🧩 Struktur + Modell + Saisonalität Bot</h1>
+<div class="sub">
+  <span id="testnetBadge" class="badge testnet">TESTNET</span>
+  <span class="pill" id="timeframePill">{{ timeframe }}</span>
+  <span>Aktive Märkte: <span id="marketCount">–</span></span>
+  <span>Letztes Update: <span id="lastUpdate">–</span></span>
 </div>
 
+<div class="panel">
+  <h2>Märkte-Übersicht</h2>
+  <table>
+    <thead>
+      <tr><th>Markt</th><th>Preis</th><th>Signal</th><th>BOS</th><th>Modell</th><th>Saison</th><th>Position</th><th>PnL</th><th></th></tr>
+    </thead>
+    <tbody id="overviewBody"></tbody>
+  </table>
+  <div class="controls" style="margin-top: 14px;">
+    <select id="addSymbolSelect"></select>
+    <button onclick="addMarket()">+ Markt hinzufügen</button>
+  </div>
+  <div class="error-msg" id="marketOpError"></div>
+</div>
+
+<div class="tabs" id="marketTabs"></div>
+
 <div class="grid">
-  <div style="display:flex; flex-direction:column; gap:16px;">
+  <div>
     <div class="panel">
-      <div class="panel-head">
-        <span>Kurs &amp; Moving Averages</span>
-        <div style="display:flex; align-items:center; gap:10px;">
-          <div class="toggle-group">
-            <button class="toggle-btn active" id="btn-line" onclick="setChartMode('line')">Linie</button>
-            <button class="toggle-btn" id="btn-candle" onclick="setChartMode('candle')">Kerzen</button>
-          </div>
-          <button class="toggle-btn standalone" id="btn-reset-zoom" onclick="resetZoom()" title="Zoom zurücksetzen">⤢ Reset</button>
-          <span id="chart-signal">—</span>
-        </div>
-      </div>
-      <div class="chart-wrap"><canvas id="priceChart"></canvas></div>
-    </div>
-
-    <div class="panel">
-      <div class="stats">
-        <div class="stat"><div class="label">Preis</div><div class="value" id="stat-price">—</div></div>
-        <div class="stat"><div class="label">Signal</div><div class="value neutral" id="stat-signal">—</div></div>
-        <div class="stat"><div class="label">MA20 / MA50 Abstand</div><div class="value" id="stat-gap">—</div></div>
-        <div class="stat"><div class="label">RSI (14)</div><div class="value" id="stat-rsi">—</div></div>
+      <h2>Candlestick-Chart – <span id="chartSymbolLabel">–</span></h2>
+      <canvas id="candleCanvas"></canvas>
+      <div class="legend">
+        <span><span class="swatch" style="background:#3fb950"></span> Bullische Kerze</span>
+        <span><span class="swatch" style="background:#f85149"></span> Bärische Kerze</span>
+        <span><span class="swatch" style="background:#f85149;opacity:0.6"></span> Stop-Loss</span>
+        <span><span class="swatch" style="background:#3fb950;opacity:0.6"></span> Take-Profit</span>
+        <span><span class="swatch" style="background:#e3b341"></span> Einstieg</span>
       </div>
     </div>
-
     <div class="panel">
-      <div class="panel-head">Trade-Historie</div>
-      <div id="trades-wrap"><div class="empty">Noch keine Trades ausgeführt.</div></div>
+      <h2>Trade-Historie (alle Märkte)</h2>
+      <table>
+        <thead><tr><th>Zeit</th><th>Markt</th><th>Typ</th><th>Preis</th><th>PnL</th><th>Grund</th></tr></thead>
+        <tbody id="tradesBody"></tbody>
+      </table>
     </div>
   </div>
 
-  <div class="side">
+  <div>
     <div class="panel">
-      <div class="panel-head">Guthaben</div>
-      <div class="balance-box" id="balance-box">
-        <div class="balance-row">
-          <div>
-            <div class="balance-ccy" id="bal-quote-ccy">—</div>
-            <div class="balance-sub" id="bal-quote-total">Gesamt: —</div>
-          </div>
-          <div class="balance-amt" id="bal-quote-free">—</div>
-        </div>
-        <div class="balance-row">
-          <div>
-            <div class="balance-ccy" id="bal-base-ccy">—</div>
-            <div class="balance-sub" id="bal-base-total">Gesamt: —</div>
-          </div>
-          <div class="balance-amt" id="bal-base-free">—</div>
-        </div>
-      </div>
+      <h2>Signal – <span id="signalSymbolLabel">–</span></h2>
+      <div class="row"><span class="label">Preis</span><span id="price">–</span></div>
+      <div class="row"><span class="label">Signal</span><span id="signal">–</span></div>
+      <div class="row"><span class="label">Strukturbruch (BOS)</span><span id="bosUp">–</span></div>
+      <div class="row"><span class="label">Letztes Swing-High</span><span id="swingHigh">–</span></div>
+      <div class="row"><span class="label">Letztes Swing-Low</span><span id="swingLow">–</span></div>
+      <div class="row"><span class="label">Modell-Proba (up)</span><span id="modelProba">–</span></div>
+      <div class="row"><span class="label">Modell-Status</span><span id="modelTrained">–</span></div>
+      <div class="row"><span class="label">Saisonalitäts-Score</span><span id="seasonScore">–</span></div>
     </div>
 
     <div class="panel">
-      <div class="panel-head">Position</div>
-      <div class="position-box" id="position-box">
-        <div class="row"><span class="k">Status</span><span id="pos-status">FLAT</span></div>
-        <div class="row"><span class="k">Einstieg</span><span id="pos-entry">—</span></div>
-        <div class="row"><span class="k">Menge</span><span id="pos-amount">—</span></div>
-        <div class="row"><span class="k">PnL</span><span id="pos-pnl">—</span></div>
-      </div>
+      <h2>Position</h2>
+      <div class="row"><span class="label">In Position</span><span id="inPosition">–</span></div>
+      <div class="row"><span class="label">Einstiegspreis</span><span id="entryPrice">–</span></div>
+      <div class="row"><span class="label">Menge</span><span id="amount">–</span></div>
+      <div class="row"><span class="label">Stop-Loss</span><span id="stopLoss">–</span></div>
+      <div class="row"><span class="label">Take-Profit</span><span id="takeProfit">–</span></div>
+      <div class="row"><span class="label">PnL</span><span id="pnlPct">–</span></div>
     </div>
 
-    <div class="panel" style="flex:1;">
-      <div class="panel-head">Live-Log</div>
-      <div class="log" id="log-box"></div>
+    <div class="panel">
+      <h2>Guthaben</h2>
+      <div class="row"><span class="label">{{ '' }}Quote (gesamt)</span><span id="quoteBal">–</span></div>
+      <div class="row"><span class="label" id="baseLabel">Base (dieser Markt)</span><span id="baseBal">–</span></div>
+    </div>
+
+    <div class="panel">
+      <h2>Live-Log</h2>
+      <div id="log"></div>
     </div>
   </div>
 </div>
 
 <script>
-let chartMode = 'line';
-let chart = null;
-let lastData = null;
+let selectedSymbol = null;
+let latestSnapshot = null;
 
-function buildLineChart(){
-  const ctx = document.getElementById('priceChart').getContext('2d');
-  return new Chart(ctx, {
-    type: 'line',
-    data: {
-      labels: [],
-      datasets: [
-        { label: 'Preis', data: [], borderColor: '#E6EDF3', borderWidth: 1.5, pointRadius: 0, tension: 0.15 },
-        { label: 'MA20', data: [], borderColor: '#5DA9E9', borderWidth: 1.5, pointRadius: 0, tension: 0.15 },
-        { label: 'MA50', data: [], borderColor: '#B48CE0', borderWidth: 1.5, pointRadius: 0, tension: 0.15 },
-      ]
-    },
-    options: {
-      responsive: true, maintainAspectRatio: false, animation: false,
-      interaction: { mode: 'index', intersect: false },
-      scales: {
-        x: { ticks: { color: '#6E7A8A', maxTicksLimit: 8 }, grid: { color: '#1A222C' } },
-        y: { ticks: { color: '#6E7A8A' }, grid: { color: '#1A222C' } }
-      },
-      plugins: {
-        legend: { labels: { color: '#9AA6B2', font: { size: 11 } } },
-        zoom: {
-          pan: { enabled: true, mode: 'x' },
-          zoom: {
-            wheel: { enabled: true },
-            pinch: { enabled: true },
-            drag: { enabled: false },
-            mode: 'x'
-          }
-        }
-      }
-    }
+function fmt(v, digits = 8) {
+  if (v === null || v === undefined) return '–';
+  return Number(v).toLocaleString('de-DE', { maximumFractionDigits: digits });
+}
+
+function signalBadge(signal) {
+  if (signal === 'BUY') return '<span class="badge buy">BUY</span>';
+  if (signal === 'SELL') return '<span class="badge sell">SELL</span>';
+  return '<span class="badge hold">HOLD</span>';
+}
+
+// ---------- Candlestick-Renderer (reines Canvas, keine externe Chart-Lib) ----------
+function drawCandles(candles, stopLoss, takeProfit, entryPrice) {
+  const canvas = document.getElementById('candleCanvas');
+  const ctx = canvas.getContext('2d');
+  const dpr = window.devicePixelRatio || 1;
+  const cssWidth = canvas.clientWidth || 600;
+  const cssHeight = 340;
+  canvas.width = cssWidth * dpr;
+  canvas.height = cssHeight * dpr;
+  canvas.style.height = cssHeight + 'px';
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, cssWidth, cssHeight);
+
+  if (!candles || candles.length === 0) {
+    ctx.fillStyle = '#7b8496';
+    ctx.font = '13px sans-serif';
+    ctx.fillText('Noch keine Kerzendaten – warte auf ersten Bot-Durchlauf …', 20, cssHeight / 2);
+    return;
+  }
+
+  const highs = candles.map(c => c.h);
+  const lows = candles.map(c => c.l);
+  let maxV = Math.max(...highs);
+  let minV = Math.min(...lows);
+  if (stopLoss) { minV = Math.min(minV, stopLoss); maxV = Math.max(maxV, stopLoss); }
+  if (takeProfit) { maxV = Math.max(maxV, takeProfit); minV = Math.min(minV, takeProfit); }
+  if (entryPrice) { maxV = Math.max(maxV, entryPrice); minV = Math.min(minV, entryPrice); }
+  const pad = (maxV - minV) * 0.08 || Math.max(maxV * 0.01, 0.0001);
+  maxV += pad; minV -= pad;
+
+  const marginLeft = 62, marginRight = 12, marginTop = 10, marginBottom = 22;
+  const plotW = cssWidth - marginLeft - marginRight;
+  const plotH = cssHeight - marginTop - marginBottom;
+  const n = candles.length;
+  const candleW = plotW / n;
+
+  const xFor = i => marginLeft + i * candleW + candleW / 2;
+  const yFor = v => marginTop + (maxV - v) / (maxV - minV) * plotH;
+  const digits = maxV < 1 ? 6 : (maxV < 100 ? 4 : 2);
+
+  // Grid + Y-Achsenbeschriftung
+  ctx.strokeStyle = '#1c2130';
+  ctx.fillStyle = '#7b8496';
+  ctx.font = '11px sans-serif';
+  const steps = 6;
+  for (let s = 0; s <= steps; s++) {
+    const v = minV + (maxV - minV) * s / steps;
+    const y = yFor(v);
+    ctx.beginPath();
+    ctx.moveTo(marginLeft, y);
+    ctx.lineTo(cssWidth - marginRight, y);
+    ctx.stroke();
+    ctx.fillText(v.toFixed(digits), 2, y + 3);
+  }
+
+  // X-Achse: ein paar Zeit-Labels
+  const labelEvery = Math.max(1, Math.floor(n / 6));
+  ctx.fillStyle = '#7b8496';
+  for (let i = 0; i < n; i += labelEvery) {
+    const d = new Date(candles[i].t);
+    const label = d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' }) + ' ' +
+                  d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+    ctx.fillText(label, xFor(i) - 20, cssHeight - 4);
+  }
+
+  // Kerzen
+  candles.forEach((c, i) => {
+    const x = xFor(i);
+    const up = c.c >= c.o;
+    const color = up ? '#3fb950' : '#f85149';
+    ctx.strokeStyle = color;
+    ctx.fillStyle = color;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(x, yFor(c.h));
+    ctx.lineTo(x, yFor(c.l));
+    ctx.stroke();
+    const bodyTop = yFor(Math.max(c.o, c.c));
+    const bodyBottom = yFor(Math.min(c.o, c.c));
+    const bw = Math.max(candleW * 0.62, 1.5);
+    ctx.fillRect(x - bw / 2, bodyTop, bw, Math.max(bodyBottom - bodyTop, 1));
   });
-}
 
-function buildCandleChart(){
-  const ctx = document.getElementById('priceChart').getContext('2d');
-  return new Chart(ctx, {
-    type: 'candlestick',
-    data: {
-      datasets: [{
-        label: 'Kerzen',
-        data: [],
-        color: { up: '#3FB950', down: '#F0605A', unchanged: '#6E7A8A' },
-        borderColor: { up: '#3FB950', down: '#F0605A', unchanged: '#6E7A8A' },
-      }]
-    },
-    options: {
-      responsive: true, maintainAspectRatio: false, animation: false,
-      scales: {
-        x: { type: 'time', time: { unit: 'hour' }, ticks: { color: '#6E7A8A', maxTicksLimit: 8 }, grid: { color: '#1A222C' } },
-        y: { ticks: { color: '#6E7A8A' }, grid: { color: '#1A222C' } }
-      },
-      plugins: {
-        legend: { display: false },
-        zoom: {
-          pan: { enabled: true, mode: 'x' },
-          zoom: {
-            wheel: { enabled: true },
-            pinch: { enabled: true },
-            drag: { enabled: false },
-            mode: 'x'
-          }
-        }
-      }
-    }
-  });
-}
-
-let currentSymbol = "{{ symbol }}";
-let currentTimeframe = "{{ timeframe }}";
-
-async function loadPresets(){
-  try{
-    const res = await fetch('/api/presets');
-    const d = await res.json();
-    const marketSel = document.getElementById('market-select');
-    const tfSel = document.getElementById('tf-select');
-    marketSel.innerHTML = d.markets.map(m => `<option value="${m}" ${m === currentSymbol ? 'selected' : ''}>${m}</option>`).join('');
-    tfSel.innerHTML = d.timeframes.map(t => `<option value="${t}" ${t === currentTimeframe ? 'selected' : ''}>${t}</option>`).join('');
-  } catch(e){
-    console.error('Presets konnten nicht geladen werden', e);
+  // Stop-Loss / Take-Profit / Entry Linien
+  function hline(v, color, label) {
+    if (v === null || v === undefined) return;
+    const y = yFor(v);
+    ctx.strokeStyle = color;
+    ctx.setLineDash([5, 4]);
+    ctx.beginPath();
+    ctx.moveTo(marginLeft, y);
+    ctx.lineTo(cssWidth - marginRight, y);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = color;
+    ctx.fillRect(cssWidth - marginRight - 34, y - 9, 34, 13);
+    ctx.fillStyle = '#0b0e14';
+    ctx.font = 'bold 10px sans-serif';
+    ctx.fillText(label, cssWidth - marginRight - 30, y + 1);
+    ctx.font = '11px sans-serif';
   }
+  hline(stopLoss, '#f85149', 'SL');
+  hline(takeProfit, '#3fb950', 'TP');
+  hline(entryPrice, '#e3b341', 'IN');
 }
 
-async function switchMarket(){
-  const symbol = document.getElementById('market-select').value;
-  const timeframe = document.getElementById('tf-select').value;
-  const statusEl = document.getElementById('switch-status');
-  const btn = document.getElementById('btn-switch-market');
+// ---------- Übersichtstabelle + Tabs ----------
+function renderOverviewAndTabs(markets) {
+  const symbols = Object.keys(markets).sort();
+  document.getElementById('marketCount').textContent = symbols.length;
 
-  btn.disabled = true;
-  statusEl.textContent = 'wechsle…';
-  statusEl.className = 'switch-status';
-
-  try{
-    const res = await fetch('/api/switch_market', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ symbol, timeframe })
-    });
-    const d = await res.json();
-    if(d.ok){
-      currentSymbol = symbol;
-      currentTimeframe = timeframe;
-      statusEl.textContent = `✓ gewechselt zu ${symbol} / ${timeframe}`;
-      statusEl.className = 'switch-status success';
-      lastData = null;
-      if(chart){ chart.data.labels = []; chart.data.datasets.forEach(ds => ds.data = []); chart.update(); }
-    } else {
-      statusEl.textContent = '✗ ' + d.error;
-      statusEl.className = 'switch-status error';
-    }
-  } catch(e){
-    statusEl.textContent = '✗ Verbindungsfehler';
-    statusEl.className = 'switch-status error';
+  if (!selectedSymbol || !symbols.includes(selectedSymbol)) {
+    selectedSymbol = symbols[0] || null;
   }
-  btn.disabled = false;
+
+  const overviewBody = document.getElementById('overviewBody');
+  overviewBody.innerHTML = symbols.map(sym => {
+    const m = markets[sym];
+    const pnlClass = m.pnl_pct > 0 ? 'pnl-pos' : (m.pnl_pct < 0 ? 'pnl-neg' : '');
+    return `
+      <tr class="clickable ${sym === selectedSymbol ? 'active-row' : ''}" onclick="selectMarket('${sym}')">
+        <td>${sym}</td>
+        <td>${fmt(m.price)}</td>
+        <td>${signalBadge(m.signal)}</td>
+        <td>${m.bos_up ? '✅' : '–'}</td>
+        <td>${m.model_proba !== null ? (m.model_proba * 100).toFixed(0) + '%' : '–'}</td>
+        <td>${m.season_score !== null ? m.season_score.toFixed(5) : '–'}</td>
+        <td>${m.in_position ? 'Ja' : 'Nein'}</td>
+        <td class="${pnlClass}">${m.pnl_pct !== null ? m.pnl_pct.toFixed(2) + '%' : '–'}</td>
+        <td><button class="danger remove-btn" onclick="event.stopPropagation(); removeMarket('${sym}')" ${m.in_position ? 'disabled title="Erst Position schließen"' : ''}>Entfernen</button></td>
+      </tr>`;
+  }).join('') || '<tr><td colspan="9" style="color:var(--muted)">Keine Märkte aktiv – füge oben einen hinzu.</td></tr>';
+
+  const tabs = document.getElementById('marketTabs');
+  tabs.innerHTML = symbols.map(sym => {
+    const m = markets[sym];
+    return `<div class="tab ${sym === selectedSymbol ? 'active' : ''}" onclick="selectMarket('${sym}')">
+      <span class="dot ${m.in_position ? 'in-pos' : 'flat'}"></span>${sym}
+    </div>`;
+  }).join('');
 }
 
-loadPresets();
-
-function resetZoom(){
-  if(chart) chart.resetZoom();
+function selectMarket(sym) {
+  selectedSymbol = sym;
+  if (latestSnapshot) renderDetail(latestSnapshot);
 }
 
-function setChartMode(mode){
-  chartMode = mode;
-  document.getElementById('btn-line').classList.toggle('active', mode === 'line');
-  document.getElementById('btn-candle').classList.toggle('active', mode === 'candle');
-  if(chart) chart.destroy();
-  chart = mode === 'line' ? buildLineChart() : buildCandleChart();
-  if(lastData) renderChart(lastData);
-}
+function renderDetail(d) {
+  const m = d.markets[selectedSymbol];
+  document.getElementById('chartSymbolLabel').textContent = selectedSymbol || '–';
+  document.getElementById('signalSymbolLabel').textContent = selectedSymbol || '–';
 
-function renderChart(d){
-  if(chartMode === 'line'){
-    chart.data.labels = d.history.map(h => h.t);
-    chart.data.datasets[0].data = d.history.map(h => h.price);
-    chart.data.datasets[1].data = d.history.map(h => h.ma_short);
-    chart.data.datasets[2].data = d.history.map(h => h.ma_long);
-  } else {
-    chart.data.datasets[0].data = d.candles.map(c => ({ x: c.t, o: c.o, h: c.h, l: c.l, c: c.c }));
+  renderOverviewAndTabs(d.markets);
+
+  if (!m) {
+    drawCandles([], null, null, null);
+    return;
   }
-  chart.update();
+
+  document.getElementById('price').textContent = fmt(m.price);
+  document.getElementById('signal').innerHTML = signalBadge(m.signal);
+  document.getElementById('bosUp').textContent = m.bos_up ? 'Ja ✅' : 'Nein';
+  document.getElementById('swingHigh').textContent = fmt(m.last_swing_high);
+  document.getElementById('swingLow').textContent = fmt(m.last_swing_low);
+  document.getElementById('modelProba').textContent = m.model_proba !== null ? (m.model_proba * 100).toFixed(1) + '%' : '–';
+  document.getElementById('modelTrained').textContent = m.model_trained ? 'trainiert' : 'noch nicht trainiert';
+  document.getElementById('seasonScore').textContent = m.season_score !== null ? m.season_score.toFixed(6) : '–';
+
+  document.getElementById('inPosition').textContent = m.in_position ? 'Ja' : 'Nein';
+  document.getElementById('entryPrice').textContent = fmt(m.entry_price);
+  document.getElementById('amount').textContent = fmt(m.position_amount);
+  document.getElementById('stopLoss').textContent = fmt(m.stop_loss);
+  document.getElementById('takeProfit').textContent = fmt(m.take_profit);
+  const pnlEl = document.getElementById('pnlPct');
+  pnlEl.textContent = m.pnl_pct !== null ? m.pnl_pct.toFixed(2) + '%' : '–';
+  pnlEl.className = m.pnl_pct > 0 ? 'pnl-pos' : (m.pnl_pct < 0 ? 'pnl-neg' : '');
+
+  document.getElementById('baseLabel').textContent = 'Base (' + m.base_currency + ')';
+  document.getElementById('baseBal').textContent = fmt(m.base_free) + ' / ' + fmt(m.base_total);
+
+  drawCandles(m.candles, m.stop_loss, m.take_profit, m.entry_price);
 }
 
-chart = buildLineChart();
-
-function fmt(n, digits=2){
-  if(n === null || n === undefined) return '—';
-  return Number(n).toLocaleString('de-DE', {minimumFractionDigits: digits, maximumFractionDigits: digits});
-}
-
-async function refresh(){
-  try{
+async function refresh() {
+  try {
     const res = await fetch('/api/data');
     const d = await res.json();
-    lastData = d;
+    latestSnapshot = d;
 
-    document.getElementById('symbol-badge').textContent = d.symbol || currentSymbol;
-    document.getElementById('tf-badge').textContent = d.timeframe || currentTimeframe;
-    document.getElementById('mode-badge').textContent = d.testnet ? 'TESTNET' : 'LIVE';
-    document.getElementById('mode-badge').className = 'badge ' + (d.testnet ? 'testnet' : 'live');
-    document.getElementById('updated').textContent = d.last_update ? ('letztes Update: ' + d.last_update) : 'wartet auf Daten…';
-    document.getElementById('live-dot').className = 'dot live';
+    document.getElementById('testnetBadge').textContent = d.testnet ? 'TESTNET' : 'LIVE';
+    document.getElementById('testnetBadge').className = 'badge ' + (d.testnet ? 'testnet' : 'live');
+    document.getElementById('timeframePill').textContent = d.timeframe;
+    document.getElementById('lastUpdate').textContent = d.last_update || '–';
+    document.getElementById('quoteBal').textContent = fmt(d.quote_free, 2) + ' / ' + fmt(d.quote_total, 2) + ' ' + d.quote_currency;
 
-    document.getElementById('stat-price').textContent = d.price ? fmt(d.price) : '—';
-    const sigEl = document.getElementById('stat-signal');
-    sigEl.textContent = d.signal || '—';
-    sigEl.className = 'value ' + (d.signal === 'BUY' ? 'pos' : d.signal === 'SELL' ? 'neg' : 'neutral');
-    document.getElementById('chart-signal').textContent = d.signal || '—';
+    renderDetail(d);
 
-    if(d.ma_short && d.ma_long){
-      const gap = ((d.ma_short - d.ma_long) / d.ma_long * 100);
-      const gapEl = document.getElementById('stat-gap');
-      gapEl.textContent = (gap >= 0 ? '+' : '') + fmt(gap, 3) + '%';
-      gapEl.className = 'value ' + (gap >= 0 ? 'pos' : 'neg');
-    }
-    document.getElementById('stat-rsi').textContent = d.rsi ? fmt(d.rsi, 1) : '—';
+    const tbody = document.getElementById('tradesBody');
+    tbody.innerHTML = d.trades.slice().reverse().map(t => `
+      <tr>
+        <td>${t.time}</td>
+        <td>${t.symbol}</td>
+        <td>${t.type === 'BUY' ? '🟢 BUY' : '🔴 SELL'}</td>
+        <td>${fmt(t.price)}</td>
+        <td class="${t.pnl_pct > 0 ? 'pnl-pos' : (t.pnl_pct < 0 ? 'pnl-neg' : '')}">${t.pnl_pct !== null ? t.pnl_pct.toFixed(2) + '%' : '–'}</td>
+        <td>${t.reason || ''}</td>
+      </tr>`).join('');
 
-    document.getElementById('pos-status').textContent = d.in_position ? 'IN POSITION' : 'FLAT';
-    document.getElementById('pos-status').style.color = d.in_position ? '#3FB950' : '#6E7A8A';
-    document.getElementById('pos-entry').textContent = d.entry_price ? fmt(d.entry_price) : '—';
-    document.getElementById('pos-amount').textContent = d.position_amount ? fmt(d.position_amount, 6) : '—';
-    const pnlEl = document.getElementById('pos-pnl');
-    if(d.pnl_pct !== null && d.pnl_pct !== undefined){
-      pnlEl.textContent = (d.pnl_pct >= 0 ? '+' : '') + fmt(d.pnl_pct) + '%';
-      pnlEl.style.color = d.pnl_pct >= 0 ? '#3FB950' : '#F0605A';
-    } else {
-      pnlEl.textContent = '—'; pnlEl.style.color = '#E6EDF3';
-    }
-
-    // Guthaben
-    const b = d.balance || {};
-    document.getElementById('bal-quote-ccy').textContent = b.quote_currency || '—';
-    document.getElementById('bal-quote-free').textContent = b.quote_free !== null && b.quote_free !== undefined ? fmt(b.quote_free) : '—';
-    document.getElementById('bal-quote-total').textContent = 'Gesamt: ' + (b.quote_total !== null && b.quote_total !== undefined ? fmt(b.quote_total) : '—');
-    document.getElementById('bal-base-ccy').textContent = b.base_currency || '—';
-    document.getElementById('bal-base-free').textContent = b.base_free !== null && b.base_free !== undefined ? fmt(b.base_free, 6) : '—';
-    document.getElementById('bal-base-total').textContent = 'Gesamt: ' + (b.base_total !== null && b.base_total !== undefined ? fmt(b.base_total, 6) : '—');
-
-    renderChart(d);
-
-    // Trades
-    const tw = document.getElementById('trades-wrap');
-    if(d.trades.length === 0){
-      tw.innerHTML = '<div class="empty">Noch keine Trades ausgeführt.</div>';
-    } else {
-      let rows = d.trades.slice().reverse().map(t => `
-        <tr>
-          <td>${t.time}</td>
-          <td class="type-${t.type.toLowerCase()}">${t.type}</td>
-          <td>${fmt(t.price)}</td>
-          <td>${t.pnl_pct !== null ? (t.pnl_pct >= 0 ? '+' : '') + fmt(t.pnl_pct) + '%' : '—'}</td>
-          <td>${t.reason}</td>
-        </tr>`).join('');
-      tw.innerHTML = `<table><thead><tr><th>Zeit</th><th>Typ</th><th>Preis</th><th>PnL</th><th>Grund</th></tr></thead><tbody>${rows}</tbody></table>`;
-    }
-
-    // Log
-    const logBox = document.getElementById('log-box');
-    logBox.innerHTML = d.log_tail.map(l => {
-      let cls = '';
-      if(l.includes('KAUF')) cls = 'buy';
-      if(l.includes('VERKAUF')) cls = 'sell';
-      return `<div class="line ${cls}">${l}</div>`;
-    }).join('');
-    logBox.scrollTop = logBox.scrollHeight;
-
-  } catch(e){
-    document.getElementById('live-dot').className = 'dot';
-    document.getElementById('updated').textContent = 'Verbindung zum Bot verloren…';
+    const logEl = document.getElementById('log');
+    logEl.innerHTML = d.log_tail.map(l => `<div>${l}</div>`).join('');
+    logEl.scrollTop = logEl.scrollHeight;
+  } catch (e) {
+    console.error('Refresh fehlgeschlagen', e);
   }
 }
 
+async function loadPresets() {
+  const res = await fetch('/api/presets');
+  const d = await res.json();
+  const select = document.getElementById('addSymbolSelect');
+  select.innerHTML = d.markets.map(m => `<option value="${m}">${m}</option>`).join('')
+    || '<option value="">Keine weiteren Presets übrig</option>';
+}
+
+async function addMarket() {
+  const symbol = document.getElementById('addSymbolSelect').value;
+  const errEl = document.getElementById('marketOpError');
+  errEl.textContent = '';
+  if (!symbol) return;
+  try {
+    const res = await fetch('/api/add_market', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ symbol }),
+    });
+    const d = await res.json();
+    if (!d.ok) {
+      errEl.textContent = d.error || 'Hinzufügen fehlgeschlagen.';
+    } else {
+      selectedSymbol = symbol;
+      await loadPresets();
+    }
+  } catch (e) {
+    errEl.textContent = 'Netzwerkfehler beim Hinzufügen.';
+  }
+}
+
+async function removeMarket(symbol) {
+  const errEl = document.getElementById('marketOpError');
+  errEl.textContent = '';
+  try {
+    const res = await fetch('/api/remove_market', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ symbol }),
+    });
+    const d = await res.json();
+    if (!d.ok) {
+      errEl.textContent = d.error || 'Entfernen fehlgeschlagen.';
+    } else {
+      await loadPresets();
+    }
+  } catch (e) {
+    errEl.textContent = 'Netzwerkfehler beim Entfernen.';
+  }
+}
+
+window.addEventListener('resize', () => { if (latestSnapshot) renderDetail(latestSnapshot); });
+
+loadPresets();
 refresh();
-setInterval(refresh, 3000);
+setInterval(refresh, 5000);
 </script>
+
 </body>
 </html>

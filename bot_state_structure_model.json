@@ -1,0 +1,28 @@
+{
+  "in_position": false,
+  "entry_price": null,
+  "amount": null,
+  "stop_loss": null,
+  "take_profit": null,
+  "DOGE/USDT": {
+    "in_position": false,
+    "entry_price": null,
+    "amount": null,
+    "stop_loss": null,
+    "take_profit": null
+  },
+  "BTC/USDT": {
+    "in_position": false,
+    "entry_price": null,
+    "amount": null,
+    "stop_loss": null,
+    "take_profit": null
+  },
+  "ETH/USDT": {
+    "in_position": false,
+    "entry_price": null,
+    "amount": null,
+    "stop_loss": null,
+    "take_profit": null
+  }
+}
