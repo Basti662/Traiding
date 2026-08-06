@@ -40,7 +40,7 @@ from flask import Flask, jsonify, render_template, request
 load_dotenv()
 
 USE_TESTNET = True                 # NIEMALS ohne wochenlange Testnet-Erfahrung auf False stellen
-SYMBOL = "DOGE/USDT"               # volatiler als BTC - gut zum Stresstesten der Strategie
+SYMBOL = "SOL/USDT"               # volatiler als BTC - gut zum Stresstesten der Strategie
 TIMEFRAME = "15m"                  # Kerzengröße: '1m','5m','15m','1h','4h','1d'
 SHORT_WINDOW = 20
 LONG_WINDOW = 50
