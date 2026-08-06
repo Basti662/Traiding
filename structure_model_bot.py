@@ -37,6 +37,16 @@ WICHTIGE SICHERHEITSHINWEISE (identisch zu exchange_bot.py):
   eine Logistische Regression auf ~7 einfachen Features ist kein Freifahrtschein -
   behandle proba_up als schwachen Zusatzfilter, nicht als Vorhersage.
 
+ZWEI EXCHANGE-VERBINDUNGEN (wichtig zu wissen):
+- Kerzen/Kursdaten (OHLCV) kommen von einer separaten, ungeschützten Verbindung
+  zum ECHTEN Binance (nur Lesezugriff, kein API-Key nötig) - siehe create_data_exchange().
+  Grund: Binance Testnet wird periodisch zurückgesetzt und liefert oft nur wenige
+  Dutzend historische Kerzen statt der ~530+, die Struktur-Erkennung und Modell-
+  Training brauchen ("Zu wenig Historie geladen" im Log).
+- Orders, Guthaben und Positionen laufen weiterhin komplett über das Testnet
+  (create_exchange(), mit deinen API-Keys). Es wird also weiterhin nur mit
+  Fake-Geld gehandelt - nur die Kursdaten zur Signalberechnung sind "echt".
+
 SETUP:
 1. pip install ccxt python-dotenv pandas numpy scikit-learn flask
 2. Datei ".env" im selben Ordner erstellen mit:
@@ -455,6 +465,24 @@ def create_exchange():
     return exchange
 
 
+def create_data_exchange():
+    """Separate Exchange-Instanz NUR für Marktdaten (Kerzen/OHLCV), immer gegen
+    das echte Binance (nicht Testnet). Kein API-Key nötig, da OHLCV öffentliche
+    Marktdaten sind - kein Zugriff auf Konto/Orders möglich.
+
+    Grund: Binance Testnet wird periodisch zurückgesetzt und hat kaum historische
+    Kerzen (oft nur wenige Dutzend statt der ~530+, die Struktur-Erkennung +
+    Modell-Training brauchen). Handelsausführung (Orders, Guthaben) bleibt
+    trotzdem komplett auf dem Testnet über die 'echte' create_exchange()-Instanz -
+    hier wird kein echtes Geld bewegt."""
+    data_exchange = ccxt.binance({
+        "enableRateLimit": True,
+        "options": {"defaultType": "spot"},
+    })
+    log.info("Markt-Daten-Quelle: echtes Binance (nur Lesezugriff, public OHLCV) - Orders laufen weiterhin über Testnet.")
+    return data_exchange
+
+
 def fetch_ohlcv_df(exchange, symbol, timeframe, limit=OHLCV_FETCH_LIMIT):
     raw = exchange.fetch_ohlcv(symbol, timeframe=timeframe, limit=limit)
     df = pd.DataFrame(raw, columns=["timestamp", "Open", "High", "Low", "Close", "Volume"])
@@ -739,13 +767,13 @@ def compute_entry_levels(price, last_row):
 # ============================================================
 # EINEN EINZELNEN MARKT VERARBEITEN (wird pro Symbol pro Runde aufgerufen)
 # ============================================================
-def process_symbol(exchange, symbol, balance):
+def process_symbol(exchange, data_exchange, symbol, balance):
     ensure_state(symbol)
     dashboard.ensure_market(symbol)
     model_state = get_or_create_model(symbol)
     state = state_by_symbol[symbol]
 
-    raw_df = fetch_ohlcv_df(exchange, symbol, TIMEFRAME)
+    raw_df = fetch_ohlcv_df(data_exchange, symbol, TIMEFRAME)
     if len(raw_df) < MIN_CANDLES_REQUIRED:
         msg = f"Zu wenig Historie geladen ({len(raw_df)} Kerzen) - warte auf mehr Daten."
         log.warning(f"[{symbol}] {msg}")
@@ -794,6 +822,7 @@ def process_symbol(exchange, symbol, balance):
 def run_bot():
     global _exchange_ref, state_by_symbol
     exchange = create_exchange()
+    data_exchange = create_data_exchange()
     _exchange_ref = exchange
     state_by_symbol = load_state()
 
@@ -812,7 +841,7 @@ def run_bot():
         dashboard.ensure_market(symbol)
 
     log.info(f"Bot gestartet | Strategie: Struktur+Modell+Saisonalität | Märkte: {registry.get_all()} | "
-             f"Timeframe: {TIMEFRAME} | Testnet: {USE_TESTNET}")
+             f"Timeframe: {TIMEFRAME} | Testnet: {USE_TESTNET} (Orders) | Kursdaten: echtes Binance (Lesezugriff)")
     log.info(f"Dashboard verfügbar unter: http://{DASHBOARD_HOST}:{DASHBOARD_PORT}")
 
     while True:
@@ -831,7 +860,7 @@ def run_bot():
 
         for symbol in active_symbols:
             try:
-                process_symbol(exchange, symbol, balance)
+                process_symbol(exchange, data_exchange, symbol, balance)
             except ccxt.NetworkError as e:
                 log.error(f"[{symbol}] Netzwerkfehler, versuche es nächste Runde erneut: {e}")
                 dashboard.set_market_error(symbol, "Netzwerkfehler")
